@@ -149,6 +149,125 @@ merge_mode="sum": h_final = h_forward + h_backward
 - **逐步預測**: 每個時間步預測下一個詞
 - **Teacher Forcing**: 訓練時使用正確答案作為輸入
 
+---
+
+## Seq2seq 訓練原理：Teacher Forcing
+
+### 核心概念
+
+**seq2seq 模型的輸入：**
+1. **英文原文** (編碼器輸入)
+2. **西班牙文翻譯的前半部分** (解碼器輸入)
+
+**seq2seq 模型的輸出：**
+- **西班牙文翻譯的下一個字** (預測目標)
+
+### 訓練範例
+
+```python
+# 訓練資料
+英文:         "Hello"
+西班牙文完整:  "[start] Hola [end]"
+
+# 模型輸入輸出（錯位一個字）
+解碼器輸入:   "[start] Hola"        # spa[:, :-1] 去掉最後一個字
+預測目標:     "Hola [end]"          # spa[:, 1:]  去掉第一個字
+```
+
+### 逐步預測過程
+
+```
+原始序列: [start]  Hola  [end]
+           ↓       ↓      ↓
+時間步 0:  輸入 [start]           → 預測 Hola
+時間步 1:  輸入 [start] Hola      → 預測 [end]
+```
+
+**完整範例：**
+```
+英文: "Good morning"
+西班牙文: "[start] Buenos días [end]"
+
+解碼器輸入序列:  [start]  Buenos  días
+                  ↓       ↓       ↓
+預測目標序列:     Buenos  días    [end]
+```
+
+### 程式碼實現
+
+```python
+def format_dataset(eng, spa):
+    eng = source_vectorization(eng)
+    spa = target_vectorization(spa)
+    return ({
+            "english": eng,           # 編碼器輸入: 英文
+            "spanish": spa[:, :-1]},  # 解碼器輸入: 西班牙文（去掉最後字）
+            spa[:, 1:])               # 預測目標: 西班牙文（去掉第一字）
+```
+
+### Teacher Forcing 機制
+
+**訓練時 (Teacher Forcing):**
+```python
+# 即使模型預測錯誤，仍使用正確答案作為下一步輸入
+時間步 1: 輸入 "[start]"      → 預測 "Hola" ✓
+時間步 2: 輸入 "[start] Hola" → 預測 "mundo" ✗ (錯誤)
+時間步 3: 仍然輸入正確的 "[start] Hola mundo" → 預測 "[end]"
+         (不使用錯誤預測的 "mundo")
+```
+
+**推理時 (自回歸生成):**
+```python
+# 使用模型自己的預測作為下一步輸入
+時間步 1: 輸入 "[start]"      → 預測 "Hola" ✓
+時間步 2: 輸入 "[start] Hola" → 預測 "mundo" ✗ (錯誤)
+時間步 3: 輸入錯誤的 "[start] Hola mundo" → 預測可能繼續錯誤
+         (使用模型自己的預測，錯誤會累積)
+```
+
+### 為什麼需要 Teacher Forcing？
+
+| 特點 | Teacher Forcing | 自回歸生成 |
+|------|-----------------|-----------|
+| 訓練速度 | 快（並行計算） | 慢（逐步生成） |
+| 訓練穩定性 | 高 | 低（錯誤累積） |
+| 使用時機 | 訓練階段 | 推理階段 |
+| 輸入來源 | 正確答案 | 模型預測 |
+
+### 推理時的解碼過程
+
+```python
+def decode_sequence(input_sentence):
+    decoded_sentence = "[start]"
+    for i in range(max_decoded_sentence_length):
+        # 使用目前已生成的句子作為輸入
+        tokenized_target = target_vectorization([decoded_sentence])
+        predictions = seq2seq.predict([input_sentence, tokenized_target])
+
+        # 預測下一個字
+        next_token = vocab[np.argmax(predictions[0, i, :])]
+        decoded_sentence += " " + next_token
+
+        if next_token == "[end]":
+            break
+    return decoded_sentence
+```
+
+**推理範例：**
+```
+輸入英文: "Hello"
+
+步驟 1: decoded_sentence = "[start]"
+       → 預測 "Hola"
+       → decoded_sentence = "[start] Hola"
+
+步驟 2: decoded_sentence = "[start] Hola"
+       → 預測 "[end]"
+       → decoded_sentence = "[start] Hola [end]"
+
+最終輸出: "Hola"
+```
+
 ### 關鍵參數
 - **詞彙表大小**: 15,000 tokens
 - **序列長度**: 20 (輸入), 21 (目標)
