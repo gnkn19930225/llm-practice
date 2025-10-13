@@ -1,6 +1,55 @@
-# RNN Temperature Forecasting Project
+# Seq2seq 機器翻譯專案 (英文轉西班牙文)
 
-This project uses LSTM recurrent neural networks for time series temperature prediction using the Jena Climate dataset (2009-2016).
+使用 GRU (Gated Recurrent Unit) 實現的序列到序列 (sequence-to-sequence) 翻譯模型。
+
+## 專案架構圖
+
+```mermaid
+graph TD
+    A["英文輸入<br/>Hello"] --> B["TextVectorization<br/>詞彙表: 15000<br/>序列長度: 20"]
+    C["西班牙文輸出<br/>[start] Hola [end]"] --> D["TextVectorization<br/>詞彙表: 15000<br/>序列長度: 21"]
+
+    B --> E["整數序列<br/>[3, 15, 8, ...]"]
+    D --> F["整數序列<br/>[2, 45, 12, ..., 3]"]
+
+    E --> G["Embedding 嵌入層<br/>維度: 256"]
+    F --> H["Embedding 嵌入層<br/>維度: 256<br/>mask_zero=True"]
+
+    G --> I["Bidirectional GRU<br/>編碼器<br/>隱藏層: 1024<br/>merge_mode=sum"]
+    H --> J["GRU 解碼器<br/>隱藏層: 1024<br/>return_sequences=True"]
+
+    I -->|"初始狀態<br/>initial_state"| J
+
+    J --> K["Dropout<br/>rate: 0.5"]
+    K --> L["Dense 輸出層<br/>softmax<br/>15000 個詞彙"]
+    L --> M["預測結果<br/>Hola"]
+
+    style I fill:#e1f5ff
+    style J fill:#fff4e1
+    style L fill:#ffe1e1
+```
+
+## 模型組件說明
+
+### Encoder (編碼器 - 雙向 GRU)
+- **作用**: 處理英文輸入序列
+- **輸出**: 單一上下文向量 (encoded_source)
+- **雙向**: 同時從前向後和從後向前讀取序列
+- **merge_mode="sum"**: 將兩個方向的輸出相加
+
+### Decoder (解碼器 - GRU)
+- **作用**: 生成西班牙文翻譯
+- **初始狀態**: 使用編碼器的上下文向量
+- **逐步預測**: 每個時間步預測下一個詞
+- **Teacher Forcing**: 訓練時使用正確答案作為輸入
+
+### 關鍵參數
+- **詞彙表大小**: 15,000 tokens
+- **序列長度**: 20 (輸入), 21 (目標)
+- **嵌入維度**: 256
+- **隱藏層維度**: 1024
+- **批次大小**: 64
+- **訓練輪數**: 15 epochs
 
 ## NLP Text Preprocessing Notes
 
@@ -131,20 +180,29 @@ target_vectorization.adapt(train_text_data)
 
 ---
 
-## Project Files
+## 專案檔案
 
-- `Untitled-1.py`: LSTM model training script
-- `jena_climate_2009_2016.csv`: Climate dataset
-- `jena_dense.keras`: Trained model checkpoint
+- `11-5-1.py`: Seq2seq 翻譯模型訓練腳本
+- `spa-eng/`: 英文-西班牙文平行語料庫資料夾
+- `spa-eng/spa.txt`: 訓練資料 (格式: English\tSpanish)
 
-## Usage
+## 使用方式
 
 ```bash
-python Untitled-1.py
+python 11-5-1.py
 ```
 
-## Dependencies
+## 相依套件
 
 - tensorflow/keras
-- numpy
-- matplotlib
+- Python 3.x
+
+## 資料集格式
+
+```
+Hello.\t¡Hola!
+How are you?\t¿Cómo estás?
+Good morning.\tBuenos días.
+```
+
+每行包含英文和西班牙文，以 tab (`\t`) 分隔。
