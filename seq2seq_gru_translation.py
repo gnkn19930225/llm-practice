@@ -80,6 +80,7 @@ encoded_source = tf.keras.layers.Bidirectional(
 
 past_target = tf.keras.Input(shape=(None,), dtype="int64", name="spanish")
 x = tf.keras.layers.Embedding(vacab_size, embed_dim,mask_zero=True)(past_target)
+
 decoder_gru = tf.keras.layers.GRU(latent_dim, return_sequences=True)
 x = decoder_gru(x, initial_state=encoded_source)
 x = tf.keras.layers.Dropout(0.5)(x)

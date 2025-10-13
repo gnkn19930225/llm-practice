@@ -31,6 +31,112 @@ graph TD
 
 ## 模型組件說明
 
+### Embedding 層 (詞嵌入層)
+
+**作用**: 將整數索引轉換為密集的向量表示
+
+```python
+# 編碼器的嵌入層
+Embedding(vocab_size, embed_dim)  # (15000, 256)
+
+# 解碼器的嵌入層
+Embedding(vocab_size, embed_dim, mask_zero=True)  # (15000, 256)
+```
+
+**為什麼需要 Embedding？**
+- 神經網絡無法直接處理離散的整數索引
+- 將稀疏的 one-hot 編碼轉換為密集向量
+- 在訓練中學習詞彙之間的語義關係
+- 相似的詞會有相似的向量表示
+
+**輸入輸出轉換：**
+```
+輸入：整數序列 [3, 15, 8, 42]
+     shape: (batch_size, sequence_length)
+
+                    ↓  Embedding 層
+
+輸出：嵌入向量
+     shape: (batch_size, sequence_length, 256)
+     每個整數變成 256 維的浮點數向量
+```
+
+**mask_zero=True 的作用：**
+- 將索引 `0` 視為填充符號 (padding)
+- 在計算時自動忽略這些位置
+- 用於處理不同長度的序列
+
+**範例：**
+```python
+# 詞彙表: {"hello": 3, "world": 15, "good": 8, ...}
+輸入 ID:  [3,    15,    8,    42   ]
+         ↓     ↓      ↓     ↓
+嵌入向量: [0.2,  [-0.1, [0.5,  [0.3,
+          0.5,   0.3,   0.1,  -0.2,
+          -0.1,  0.7,   0.4,   0.6,
+          ...]   ...]   ...]   ...]
+         256維  256維  256維  256維
+```
+
+---
+
+### Bidirectional 層 (雙向包裝層)
+
+**作用**: 讓 RNN 同時從兩個方向處理序列
+
+```python
+# 編碼器使用雙向 GRU
+encoded_source = Bidirectional(
+    GRU(latent_dim),  # 1024 維
+    merge_mode="sum"
+)(x)
+```
+
+**為什麼需要 Bidirectional？**
+- 單向 RNN 只能看到"過去"的信息
+- 雙向可以同時看到前後文，獲得更完整的理解
+- 特別適合需要理解整個句子含義的任務（如翻譯編碼器）
+
+**運作方式：**
+```
+輸入序列: ["I", "love", "you"]
+
+前向 GRU (→):  I  →  love  →  you    (從左到右)
+                                ↓
+                            h_forward
+
+後向 GRU (←):  I  ←  love  ←  you    (從右到左)
+                                ↓
+                            h_backward
+
+merge_mode="sum": h_final = h_forward + h_backward
+```
+
+**merge_mode 參數比較：**
+
+| merge_mode | 說明 | 輸出維度 | 特點 |
+|------------|------|----------|------|
+| `"sum"` | 相加 | 1024 | 節省參數，結合兩方向 |
+| `"concat"` | 串接 | 2048 | 保留完整信息 |
+| `"mul"` | 相乘 | 1024 | 強調共同特徵 |
+| `"ave"` | 平均 | 1024 | 平衡兩方向 |
+| `None` | 分開 | [1024, 1024] | 分別處理 |
+
+**使用時機：**
+- ✅ **適合雙向**: 文本分類、情感分析、**翻譯編碼器**
+  - 可以看到整個輸入序列
+  - 需要理解完整的上下文
+
+- ❌ **不適合雙向**: 文本生成、**翻譯解碼器**
+  - 生成時無法看到未來的詞
+  - 必須按順序逐步生成
+
+**在本專案中：**
+- **Encoder 用雙向**: 可以完整理解英文輸入句子的含義
+- **Decoder 不用雙向**: 逐步生成西班牙文翻譯，不能提前看到未來的詞
+
+---
+
 ### Encoder (編碼器 - 雙向 GRU)
 - **作用**: 處理英文輸入序列
 - **輸出**: 單一上下文向量 (encoded_source)
@@ -50,6 +156,94 @@ graph TD
 - **隱藏層維度**: 1024
 - **批次大小**: 64
 - **訓練輪數**: 15 epochs
+
+---
+
+## GRU 內部結構圖解
+
+GRU (Gated Recurrent Unit) 是一種改良的 RNN 架構，使用門控機制來控制信息流動。
+
+```mermaid
+graph TB
+    subgraph "GRU 單元 (時間步 t)"
+        Input["輸入 x(t)"]
+        HiddenPrev["前一狀態 h(t-1)"]
+
+        Input --> Concat1["串接"]
+        HiddenPrev --> Concat1
+
+        Concat1 --> ResetGate["重置門 (Reset Gate)<br/>r = σ(Wr·[h(t-1), x(t)])"]
+        Concat1 --> UpdateGate["更新門 (Update Gate)<br/>z = σ(Wz·[h(t-1), x(t)])"]
+
+        ResetGate --> Multiply1["⊙<br/>逐元素相乘"]
+        HiddenPrev --> Multiply1
+
+        Multiply1 --> Concat2["串接"]
+        Input --> Concat2
+
+        Concat2 --> CandidateState["候選狀態<br/>h̃(t) = tanh(Wh·[r⊙h(t-1), x(t)])"]
+
+        UpdateGate --> Multiply2["⊙<br/>1-z"]
+        UpdateGate --> Multiply3["⊙<br/>z"]
+
+        CandidateState --> Multiply2
+        HiddenPrev --> Multiply3
+
+        Multiply2 --> Add["⊕<br/>相加"]
+        Multiply3 --> Add
+
+        Add --> Output["新狀態 h(t)<br/>h(t) = (1-z)⊙h̃(t) + z⊙h(t-1)"]
+    end
+
+    style ResetGate fill:#ffe1e1
+    style UpdateGate fill:#e1f5ff
+    style CandidateState fill:#e1ffe1
+    style Output fill:#fff4e1
+```
+
+### GRU 三大組件
+
+#### 1. 重置門 (Reset Gate) - 紅色
+```
+r(t) = σ(Wr · [h(t-1), x(t)])
+```
+- **作用**: 決定要忘記多少過去的信息
+- **範圍**: 0 到 1 (sigmoid 激活)
+- **r ≈ 0**: 忽略過去狀態
+- **r ≈ 1**: 保留過去狀態
+
+#### 2. 更新門 (Update Gate) - 藍色
+```
+z(t) = σ(Wz · [h(t-1), x(t)])
+```
+- **作用**: 決定要保留多少舊狀態、接受多少新狀態
+- **範圍**: 0 到 1 (sigmoid 激活)
+- **z ≈ 0**: 更新狀態 (接受新信息)
+- **z ≈ 1**: 保持狀態 (忽略新信息)
+
+#### 3. 候選狀態 (Candidate State) - 綠色
+```
+h̃(t) = tanh(Wh · [r(t) ⊙ h(t-1), x(t)])
+```
+- **作用**: 計算候選的新狀態
+- **範圍**: -1 到 1 (tanh 激活)
+- **使用重置門**: 控制過去信息的影響
+
+### 最終輸出
+```
+h(t) = (1 - z(t)) ⊙ h̃(t) + z(t) ⊙ h(t-1)
+```
+- **線性插值**: 在新狀態和舊狀態之間取平衡
+- **更新門控制**: z 決定新舊狀態的比例
+
+### GRU vs LSTM
+| 特性 | GRU | LSTM |
+|------|-----|------|
+| 門的數量 | 2 個 (重置、更新) | 3 個 (輸入、輸出、遺忘) |
+| 參數量 | 較少 | 較多 |
+| 訓練速度 | 較快 | 較慢 |
+| 記憶能力 | 適中 | 較強 |
+| 適用場景 | 中短序列 | 長序列 |
 
 ## NLP Text Preprocessing Notes
 
@@ -182,14 +376,18 @@ target_vectorization.adapt(train_text_data)
 
 ## 專案檔案
 
-- `11-5-1.py`: Seq2seq 翻譯模型訓練腳本
+- `seq2seq_gru_translation.py`: Seq2seq GRU 翻譯模型訓練腳本
 - `spa-eng/`: 英文-西班牙文平行語料庫資料夾
 - `spa-eng/spa.txt`: 訓練資料 (格式: English\tSpanish)
 
 ## 使用方式
 
 ```bash
-python 11-5-1.py
+# GRU 版本
+python seq2seq_gru_translation.py
+
+# Transformer 版本（待實作）
+# python seq2seq_transformer_translation.py
 ```
 
 ## 相依套件
