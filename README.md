@@ -6,6 +6,8 @@
 
 ## 專案架構圖
 
+### GRU 模型架構
+
 ```mermaid
 graph TD
     A["英文輸入<br/>Hello"] --> B["TextVectorization<br/>詞彙表: 15000<br/>序列長度: 20"]
@@ -29,6 +31,62 @@ graph TD
     style I fill:#e1f5ff
     style J fill:#fff4e1
     style L fill:#ffe1e1
+```
+
+### Transformer 模型架構
+
+```mermaid
+graph TD
+    A["英文輸入<br/>Hello"] --> B["TextVectorization<br/>詞彙表: 15000<br/>序列長度: 20"]
+    C["西班牙文輸出<br/>[start] Hola [end]"] --> D["TextVectorization<br/>詞彙表: 15000<br/>序列長度: 21"]
+
+    B --> E["整數序列<br/>[3, 15, 8, ...]"]
+    D --> F["整數序列<br/>[2, 45, 12, ..., 3]"]
+
+    E --> G["PositionalEmbedding<br/>詞嵌入 + 位置嵌入<br/>維度: 256"]
+    F --> H["PositionalEmbedding<br/>詞嵌入 + 位置嵌入<br/>維度: 256"]
+
+    G --> I["TransformerEncoder<br/>編碼器"]
+    H --> J["TransformerDecoder<br/>解碼器"]
+
+    I -->|"編碼器輸出序列<br/>(Cross-Attention)"| J
+
+    subgraph Encoder["編碼器內部"]
+        I1["MultiHeadAttention<br/>8個注意力頭"]
+        I2["LayerNorm + 殘差連接"]
+        I3["Feed-Forward Network<br/>dense_dim: 2048"]
+        I4["LayerNorm + 殘差連接"]
+        I1 --> I2 --> I3 --> I4
+    end
+
+    subgraph Decoder["解碼器內部"]
+        J1["Masked Self-Attention<br/>(Causal Mask)"]
+        J2["LayerNorm + 殘差連接"]
+        J3["Cross-Attention<br/>(關注編碼器輸出)"]
+        J4["LayerNorm + 殘差連接"]
+        J5["Feed-Forward Network<br/>dense_dim: 2048"]
+        J6["LayerNorm + 殘差連接"]
+        J1 --> J2 --> J3 --> J4 --> J5 --> J6
+    end
+
+    J --> K["Dropout<br/>rate: 0.5"]
+    K --> L["Dense 輸出層<br/>softmax<br/>15000 個詞彙"]
+    L --> M["預測結果<br/>Hola"]
+
+    style G fill:#fff4e1
+    style H fill:#fff4e1
+    style I fill:#e1f5ff
+    style J fill:#ffe1e1
+    style L fill:#ffd4e1
+```
+
+**關鍵差異：**
+- 🔵 **GRU**: 使用 Embedding（只有詞嵌入）
+- 🟡 **Transformer**: 使用 PositionalEmbedding（詞嵌入 + 位置嵌入）
+- 🔵 **GRU 編碼器**: 輸出單一上下文向量，通過 initial_state 傳遞
+- 🔵 **Transformer 編碼器**: 輸出整個序列，通過 Cross-Attention 連接
+- 🔴 **GRU 解碼器**: 單一 GRU 層
+- 🔴 **Transformer 解碼器**: 兩層注意力（Masked Self-Attention + Cross-Attention）+ FFN
 ```
 
 ## 模型組件說明
