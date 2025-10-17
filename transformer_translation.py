@@ -65,21 +65,14 @@ class PositionalEmbedding(tf.keras.layers.Layer):
         })
         return config
 
+
 def decode_sequence(input_sentence):
-    # 1. 將輸入的英文句子進行向量化（轉換為數字序列）
     tokenized_input_sentence = source_vectorization([input_sentence])
-    
-    # 2. 初始化翻譯結果，以 [start] 標記開始
     decoded_sentence = "[start]"
-    
-    # 3. 循環生成翻譯的每個詞彙（最多20個詞）
     for i in range(max_decoded_sentence_length):
-        # 4. 將目前生成的句子進行向量化
         tokenized_target_sentence = target_vectorization(
-            [decoded_sentence])[:, tf.newaxis, :]
-        
-        # 5. 使用訓練好的模型預測下一個詞彙
-        predictions = transformer.predict(
+            [decoded_sentence])[:, :-1]
+        predictions = transformer(
             [tokenized_input_sentence, tokenized_target_sentence])
         sampled_token_index = np.argmax(predictions[0, i, :])
         sampled_token = spa_index_lookup[sampled_token_index]
