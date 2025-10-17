@@ -1,6 +1,8 @@
 # Seq2seq 機器翻譯專案 (英文轉西班牙文)
 
-使用 GRU (Gated Recurrent Unit) 實現的序列到序列 (sequence-to-sequence) 翻譯模型。
+本專案實現了兩種序列到序列 (sequence-to-sequence) 翻譯模型：
+- **GRU 模型**: 使用門控循環單元 (Gated Recurrent Unit)
+- **Transformer 模型**: 使用注意力機制 (Attention Mechanism)
 
 ## 專案架構圖
 
@@ -493,9 +495,145 @@ target_vectorization.adapt(train_text_data)
 
 ---
 
+---
+
+## Transformer 翻譯模型
+
+### 核心概念
+
+Transformer 使用**注意力機制 (Attention Mechanism)** 取代 RNN 的順序處理，實現更高效的序列到序列翻譯。
+
+### 架構差異：GRU vs Transformer
+
+| 特性 | GRU 模型 | Transformer 模型 |
+|------|----------|------------------|
+| **核心機制** | 循環神經網絡 (RNN) | 自注意力機制 (Self-Attention) |
+| **處理方式** | 順序處理 (Sequential) | 並行處理 (Parallel) |
+| **位置信息** | 天生具備順序信息 | 需要 PositionalEmbedding |
+| **長距離依賴** | 通過隱藏狀態傳遞 | 直接連接所有位置 |
+
+### PositionalEmbedding 解析
+
+**為什麼 Transformer 需要 PositionalEmbedding？**
+
+```python
+class PositionalEmbedding(tf.keras.layers.Layer):
+    def __init__(self, sequence_length, input_dim, output_dim, **kwargs):
+        super().__init__(**kwargs)
+        # Token Embedding: 詞的語義信息
+        self.token_embeddings = tf.keras.layers.Embedding(
+            input_dim=input_dim, output_dim=output_dim)
+        # Position Embedding: 詞的位置信息
+        self.position_embeddings = tf.keras.layers.Embedding(
+            input_dim=sequence_length, output_dim=output_dim)
+
+    def call(self, inputs):
+        # 將詞嵌入和位置嵌入相加
+        embedded_tokens = self.token_embeddings(inputs)
+        embedded_positions = self.position_embeddings(positions)
+        return embedded_tokens + embedded_positions
+```
+
+**GRU vs Transformer 處理順序的方式：**
+
+```
+句子: "I love you"
+
+GRU 處理:
+├─ 時間步 1: 處理 "I"    → 更新隱藏狀態
+├─ 時間步 2: 處理 "love" → 更新隱藏狀態（知道在 "I" 後面）
+└─ 時間步 3: 處理 "you"  → 更新隱藏狀態（知道在 "love" 後面）
+✓ 天生就知道詞的順序
+
+Transformer 處理 (沒有 PositionalEmbedding):
+├─ 同時看到: ["I", "love", "you"]
+└─ ✗ 無法區分 "I love you" 和 "you love I"
+
+Transformer 處理 (有 PositionalEmbedding):
+├─ 同時看到: ["I"+位置0, "love"+位置1, "you"+位置2]
+└─ ✓ 現在知道每個詞的位置了！
+```
+
+**結論**: GRU 順序處理天生知道詞序，Transformer 並行處理需要明確添加位置信息。
+
+---
+
+### Transformer 核心組件
+
+#### 1. TransformerEncoder (編碼器)
+- **MultiHeadAttention**: 多個注意力頭同時關注不同特徵
+- **Feed-Forward Network**: 全連接前饋網絡
+- **LayerNormalization**: 穩定訓練過程
+- **殘差連接**: 緩解梯度消失問題
+
+**作用**:
+- 使用自注意力機制理解輸入句子
+- 每個詞可以直接關注句子中的所有其他詞
+- 並行處理，比 GRU 更快
+
+#### 2. TransformerDecoder (解碼器)
+- **Masked Self-Attention**: 使用 causal mask 防止看到未來信息
+- **Cross-Attention**: 關注編碼器的輸出
+- **Feed-Forward Network**: 全連接前饋網絡
+- **LayerNormalization + 殘差連接**
+
+**Causal Masking（因果遮罩）**:
+```
+生成 "Hola mundo" 時的注意力遮罩：
+
+         Hola  mundo  [end]
+Hola      ✓     ✗      ✗     (只能看到 "Hola")
+mundo     ✓     ✓      ✗     (可以看到 "Hola" 和 "mundo")
+[end]     ✓     ✓      ✓     (可以看到所有已生成的詞)
+
+✓ 可以關注    ✗ 被遮罩（防止看到未來）
+```
+
+**作用**:
+- 確保生成每個詞時，只能看到之前已生成的詞
+- 訓練時模擬真實推理場景
+- 避免信息洩漏
+
+---
+
+### 解碼策略
+
+兩種模型都使用 **Greedy Decoding（貪婪解碼）**：
+```python
+def decode_sequence(input_sentence):
+    decoded_sentence = "[start]"
+    for i in range(max_decoded_sentence_length):
+        predictions = model.predict([input_sentence, decoded_sentence])
+        # 每次選擇概率最高的詞
+        next_token = vocab[np.argmax(predictions[0, i, :])]
+        decoded_sentence += " " + next_token
+        if next_token == "[end]":
+            break
+    return decoded_sentence
+```
+
+---
+
+### 何時選擇哪種模型？
+
+**選擇 GRU 當:**
+- ✓ 數據量較小
+- ✓ 需要快速訓練
+- ✓ 短到中等長度的句子
+- ✓ 資源受限的環境
+
+**選擇 Transformer 當:**
+- ✓ 數據量充足
+- ✓ 長句子或複雜語法
+- ✓ 追求最佳翻譯品質
+- ✓ 有充足的計算資源
+
+---
+
 ## 專案檔案
 
-- `seq2seq_gru_translation.py`: Seq2seq GRU 翻譯模型訓練腳本
+- `seq2seq_gru_translation.py`: GRU 翻譯模型訓練腳本
+- `transformer_translation.py`: Transformer 翻譯模型訓練腳本
 - `spa-eng/`: 英文-西班牙文平行語料庫資料夾
 - `spa-eng/spa.txt`: 訓練資料 (格式: English\tSpanish)
 
@@ -505,8 +643,8 @@ target_vectorization.adapt(train_text_data)
 # GRU 版本
 python seq2seq_gru_translation.py
 
-# Transformer 版本（待實作）
-# python seq2seq_transformer_translation.py
+# Transformer 版本
+python transformer_translation.py
 ```
 
 ## 相依套件

@@ -5,7 +5,7 @@ import re
 import numpy as np
 
 text_file = "spa-eng/spa.txt"
-vacab_size = 15000
+vocab_size = 15000
 sequence_length = 20
 batch_size = 64
 embed_dim = 256
@@ -84,13 +84,13 @@ strip_chars = strip_chars.replace("[", "")
 strip_chars = strip_chars.replace("]", "")
 
 source_vectorization = tf.keras.layers.TextVectorization(
-    max_tokens=vacab_size,
+    max_tokens=vocab_size,
     output_mode="int",
     output_sequence_length=sequence_length,
 )
 
 target_vectorization = tf.keras.layers.TextVectorization(
-    max_tokens=vacab_size,
+    max_tokens=vocab_size,
     output_mode="int",
     output_sequence_length=sequence_length + 1,
     standardize=custom_standardization,
@@ -108,17 +108,17 @@ train_ds = make_dataset(train_pairs)
 val_ds = make_dataset(val_pairs)
 
 source = tf.keras.Input(shape=(None,), dtype="int64", name="english")
-x = tf.keras.layers.Embedding(vacab_size, embed_dim)(source)
+x = tf.keras.layers.Embedding(vocab_size, embed_dim)(source)
 encoded_source = tf.keras.layers.Bidirectional(
     tf.keras.layers.GRU(latent_dim), merge_mode="sum")(x)
 
 past_target = tf.keras.Input(shape=(None,), dtype="int64", name="spanish")
-x = tf.keras.layers.Embedding(vacab_size, embed_dim,mask_zero=True)(past_target)
+x = tf.keras.layers.Embedding(vocab_size, embed_dim, mask_zero=True)(past_target)
 
 decoder_gru = tf.keras.layers.GRU(latent_dim, return_sequences=True)
 x = decoder_gru(x, initial_state=encoded_source)
 x = tf.keras.layers.Dropout(0.5)(x)
-target_next_step = tf.keras.layers.Dense(vacab_size, activation="softmax")(x)
+target_next_step = tf.keras.layers.Dense(vocab_size, activation="softmax")(x)
 seq2seq = tf.keras.Model([source, past_target], target_next_step)
 
 seq2seq.compile(
