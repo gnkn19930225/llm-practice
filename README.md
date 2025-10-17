@@ -46,28 +46,10 @@ graph TD
     E --> G["PositionalEmbedding<br/>詞嵌入 + 位置嵌入<br/>維度: 256"]
     F --> H["PositionalEmbedding<br/>詞嵌入 + 位置嵌入<br/>維度: 256"]
 
-    G --> I["TransformerEncoder<br/>編碼器"]
-    H --> J["TransformerDecoder<br/>解碼器"]
+    G --> I["TransformerEncoder<br/>MultiHeadAttention (8頭)<br/>Feed-Forward Network<br/>LayerNorm + 殘差連接"]
+    H --> J["TransformerDecoder<br/>Masked Self-Attention<br/>Cross-Attention<br/>Feed-Forward Network<br/>LayerNorm + 殘差連接"]
 
     I -->|"編碼器輸出序列<br/>(Cross-Attention)"| J
-
-    subgraph Encoder["編碼器內部"]
-        I1["MultiHeadAttention<br/>8個注意力頭"]
-        I2["LayerNorm + 殘差連接"]
-        I3["Feed-Forward Network<br/>dense_dim: 2048"]
-        I4["LayerNorm + 殘差連接"]
-        I1 --> I2 --> I3 --> I4
-    end
-
-    subgraph Decoder["解碼器內部"]
-        J1["Masked Self-Attention<br/>(Causal Mask)"]
-        J2["LayerNorm + 殘差連接"]
-        J3["Cross-Attention<br/>(關注編碼器輸出)"]
-        J4["LayerNorm + 殘差連接"]
-        J5["Feed-Forward Network<br/>dense_dim: 2048"]
-        J6["LayerNorm + 殘差連接"]
-        J1 --> J2 --> J3 --> J4 --> J5 --> J6
-    end
 
     J --> K["Dropout<br/>rate: 0.5"]
     K --> L["Dense 輸出層<br/>softmax<br/>15000 個詞彙"]
