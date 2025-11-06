@@ -598,6 +598,80 @@ Transformer 處理 (有 PositionalEmbedding):
 
 ---
 
+### get_causal_attention_mask 詳解
+
+**用途**：生成因果遮罩（Causal Mask），防止 Transformer 解碼器在生成某個詞時看到未來的詞。
+
+**工作原理**：
+
+```python
+def get_causal_attention_mask(self, inputs):
+    input_shape = tf.shape(inputs)
+    batch_size, sequence_length = input_shape[0], input_shape[1]
+
+    # 建立位置索引矩陣
+    i = tf.range(sequence_length)[:, tf.newaxis]    # 列向量: [[0], [1], [2], ...]
+    j = tf.range(sequence_length)                   # 行向量: [0, 1, 2, ...]
+
+    # 建立遮罩: i >= j 時為 1（可以看），否則為 0（被遮罩）
+    mask = tf.cast(i >= j, dtype="int32")
+
+    # 調整形狀並廣播到批次
+    mask = tf.reshape(mask, (1, input_shape[1], input_shape[1]))
+    mult = tf.concat(
+        [tf.expand_dims(batch_size, -1),
+         tf.constant([1, 1], dtype=tf.int32)], axis=0)
+    return tf.tile(mask, mult)
+```
+
+**詳細步驟示例**（假設序列長度為 3）：
+
+```
+步驟 1: 建立位置索引
+i = [[0], [1], [2]]  (列向量，使用 tf.newaxis 新增維度)
+j = [0, 1, 2]        (行向量)
+
+步驟 2: 比較 i >= j
+     j=0  j=1  j=2
+i=0  ✓    ✗    ✗     (位置 0 只能看到自己)
+i=1  ✓    ✓    ✗     (位置 1 能看到 0,1)
+i=2  ✓    ✓    ✓     (位置 2 能看到 0,1,2)
+
+轉換為數字:
+[[1, 0, 0],
+ [1, 1, 0],
+ [1, 1, 1]]
+
+步驟 3: 複製到批次
+原始形狀: (1, 3, 3)
+廣播到: (batch_size, 3, 3)
+```
+
+**實際應用**：
+
+在生成翻譯 "Hola mundo" 時：
+
+```
+生成 "Hola" (位置 0):
+- 可以注意: 自己 ✓
+- 不能注意: mundo, [end] ✗
+
+生成 "mundo" (位置 1):
+- 可以注意: Hola, 自己 ✓
+- 不能注意: [end] ✗
+
+生成 "[end]" (位置 2):
+- 可以注意: Hola, mundo, 自己 ✓
+```
+
+**為什麼需要 Causal Mask？**
+
+- 訓練時：模擬真實推理場景，每個詞生成時只能看到已生成的詞
+- 避免信息洩漏：防止模型作弊，看到答案後再生成
+- 確保因果性：遵循語言生成的順序性原則
+
+---
+
 ### Transformer 核心組件
 
 #### 1. TransformerEncoder (編碼器)

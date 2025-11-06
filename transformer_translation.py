@@ -37,6 +37,9 @@ def custom_standardization(input_string):
 
 class PositionalEmbedding(tf.keras.layers.Layer):
     def __init__(self, sequence_length, input_dim, output_dim, **kwargs):
+        #sequence_length: 20
+        #input_dim: 15000
+        #output_dim: 256
         super().__init__(**kwargs)
         self.token_embeddings = tf.keras.layers.Embedding(
             input_dim=input_dim, output_dim=output_dim)
